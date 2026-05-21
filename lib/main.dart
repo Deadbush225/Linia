@@ -588,6 +588,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   bool _trayReady = false;
   bool _checkingUpdate = false;
   bool _allowWindowClose = false;
+  bool _blockingDialogOpen = false;
 
   String? get _projectRoot => _projectRoots.isEmpty ? null : _projectRoots[_activeRootIndex];
 
@@ -2154,8 +2155,13 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   void _showBlockingDialog(String message) {
     if (!mounted) return;
+    if (_blockingDialogOpen) {
+      _hideBlockingDialog();
+    }
+    _blockingDialogOpen = true;
     showDialog(
       context: context,
+      useRootNavigator: true,
       barrierDismissible: false,
       builder: (_) => AlertDialog(
         content: Row(
@@ -2174,8 +2180,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   void _hideBlockingDialog() {
-    if (!mounted) return;
+    if (!mounted || !_blockingDialogOpen) return;
     Navigator.of(context, rootNavigator: true).maybePop();
+    _blockingDialogOpen = false;
   }
 
   Future<File> _downloadReleaseAsset(_ReleaseAsset asset) async {
@@ -2189,22 +2196,51 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     return outFile;
   }
 
+  Future<void> _copyDirectory(Directory source, Directory destination) async {
+    if (!await destination.exists()) {
+      await destination.create(recursive: true);
+    }
+    await for (final entity in source.list(recursive: false)) {
+      final name = entity.path.split('/').last;
+      final targetPath = '${destination.path}/$name';
+      if (entity is Directory) {
+        await _copyDirectory(entity, Directory(targetPath));
+      } else if (entity is File) {
+        await entity.copy(targetPath);
+      }
+    }
+  }
+
   Future<void> _installLinuxUpdate(File tarball) async {
     final home = Platform.environment['HOME'];
     if (home == null || home.isEmpty) {
       throw Exception('HOME not set');
     }
     final installDir = Directory('$home/.local/share/linia');
-    if (!await installDir.exists()) {
-      await installDir.create(recursive: true);
-    }
+    final tempDir = await Directory.systemTemp.createTemp('linia-update-');
+    final extractDir = Directory('${tempDir.path}/extract');
+    await extractDir.create(recursive: true);
     final result = await Process.run(
       'tar',
-      ['-xzf', tarball.path, '-C', installDir.path],
+      ['-xzf', tarball.path, '-C', extractDir.path],
     );
     if (result.exitCode != 0) {
+      await tempDir.delete(recursive: true);
       throw Exception('tar failed: ${result.stderr}');
     }
+
+    final entries = await extractDir.list().toList();
+    final dirs = entries.whereType<Directory>().toList();
+    final bundleRoot = (dirs.length == 1 && entries.every((e) => e is Directory))
+        ? dirs.first
+        : extractDir;
+
+    if (await installDir.exists()) {
+      await installDir.delete(recursive: true);
+    }
+    await installDir.create(recursive: true);
+    await _copyDirectory(bundleRoot, installDir);
+    await tempDir.delete(recursive: true);
   }
 
   @override
