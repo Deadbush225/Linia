@@ -555,7 +555,7 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin, WidgetsBindingObserver, TrayListener {
+class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin, WidgetsBindingObserver, TrayListener, WindowListener {
   static const _prefProjectRootLegacy = 'project_root';
   static const _prefProjectRoots = 'project_roots';
   static const _prefActiveProjectRoot = 'active_project_root';
@@ -587,6 +587,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   double _aotOffsetY = 0.0;
   bool _trayReady = false;
   bool _checkingUpdate = false;
+  bool _allowWindowClose = false;
 
   String? get _projectRoot => _projectRoots.isEmpty ? null : _projectRoots[_activeRootIndex];
 
@@ -694,6 +695,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     _autoSyncOnExit();
     if (Platform.isLinux) {
       trayManager.removeListener(this);
+      windowManager.removeListener(this);
     }
     _tabs.dispose();
     super.dispose();
@@ -727,6 +729,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   Future<void> _initLinuxWindowState() async {
     if (!Platform.isLinux) return;
+    windowManager.addListener(this);
+    await windowManager.setPreventClose(true);
     final alwaysOnTop = await windowManager.isAlwaysOnTop();
     await _loadAlwaysOnTopPrefs();
     if (!mounted) return;
@@ -868,6 +872,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   Future<void> _toggleAlwaysOnTop() async {
     if (!Platform.isLinux) return;
     final next = !_isAlwaysOnTop;
+    Rect? targetBounds;
     if (next) {
       final display = await screenRetriever.getPrimaryDisplay();
       final visibleSize = display.visibleSize ?? display.size;
@@ -882,11 +887,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           : _aotAlign == 'bottom'
               ? visiblePosition.dy + (visibleSize.height - height)
               : visiblePosition.dy + ((visibleSize.height - height) / 2);
-      await windowManager.setBounds(
-        Rect.fromLTWH(x + _aotOffsetX, y + _aotOffsetY, width, height),
-      );
+      targetBounds = Rect.fromLTWH(x + _aotOffsetX, y + _aotOffsetY, width, height);
     }
     await windowManager.setAlwaysOnTop(next);
+    if (next && targetBounds != null) {
+      await windowManager.setBounds(targetBounds);
+    }
     if (!mounted) return;
     setState(() => _isAlwaysOnTop = next);
   }
@@ -929,8 +935,22 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         _restoreFromTray();
         break;
       case 'quit':
+        _allowWindowClose = true;
         windowManager.close();
         break;
+    }
+  }
+
+  @override
+  void onWindowClose() async {
+    if (!Platform.isLinux) return;
+    if (_allowWindowClose) {
+      await windowManager.setPreventClose(false);
+      await windowManager.destroy();
+      return;
+    }
+    if (await windowManager.isPreventClose()) {
+      await _minimizeToTray();
     }
   }
 
@@ -2263,8 +2283,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           if (Platform.isLinux)
             Tooltip(
               message: _isAlwaysOnTop
-                  ? 'Disable always on top (Ctrl+Shift+T)\nLong-press to edit layout'
-                  : 'Enable always on top (Ctrl+Shift+T)\nLong-press to edit layout',
+                  ? 'Disable always on top (Ctrl+Shift+Y)\nLong-press to edit layout'
+                  : 'Enable always on top (Ctrl+Shift+Y)\nLong-press to edit layout',
               child: InkWell(
                 onTap: _toggleAlwaysOnTop,
                 onLongPress: _openAlwaysOnTopSettings,

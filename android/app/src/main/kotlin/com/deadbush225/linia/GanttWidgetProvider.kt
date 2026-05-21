@@ -105,6 +105,26 @@ class GanttWidgetProvider : AppWidgetProvider() {
             return prefs.getString("flutter.project_root", null)
         }
 
+        /** Reads the selected project folder (root or root/subfolder). */
+        private fun getActiveProjectPath(context: Context): String? {
+            val root = getProjectRoot(context) ?: return null
+            val prefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            val keysRaw = prefs.getString("flutter.active_project_keys", null)
+            val key = if (!keysRaw.isNullOrBlank()) {
+                try {
+                    JSONObject(keysRaw).optString(root, "")
+                } catch (e: Exception) {
+                    ""
+                }
+            } else {
+                ""
+            }
+            if (key.isBlank()) return root
+
+            val candidate = File(root, key)
+            return if (candidate.exists() && candidate.isDirectory) candidate.path else root
+        }
+
         private fun parseField(frontmatter: String, vararg keys: String): String? {
             for (key in keys) {
                 val regex = Regex("""^$key\s*:\s*(.+)$""", RegexOption.MULTILINE)
@@ -154,21 +174,25 @@ class GanttWidgetProvider : AppWidgetProvider() {
             val tasks = mutableListOf<TaskEntry>()
             var colorIdx = 0
 
-            fun scanDir(dir: File) {
-                dir.listFiles()?.filter { it.isFile && it.extension == "md" }?.forEach { f ->
-                    parseMdFile(f, colorIdx)?.let { tasks.add(it); colorIdx++ }
+            fun scanDirRecursive(dir: File) {
+                dir.listFiles()?.forEach { entry ->
+                    when {
+                        entry.isDirectory && entry.name != "archive" -> scanDirRecursive(entry)
+                        entry.isFile && entry.extension == "md" -> {
+                            parseMdFile(entry, colorIdx)?.let { tasks.add(it); colorIdx++ }
+                        }
+                    }
                 }
             }
 
-            scanDir(root)
-            root.listFiles()?.filter { it.isDirectory && it.name != "archive" }?.forEach { scanDir(it) }
+            scanDirRecursive(root)
             tasks.sortWith(compareBy { it.endDate?.let { d -> daysUntilDue(d) } ?: 9999 })
             return tasks
         }
 
         fun scanAndBuildTaskJson(context: Context): JSONArray {
-            val root = getProjectRoot(context) ?: return JSONArray()
-            val tasks = scanTasks(root)
+            val projectPath = getActiveProjectPath(context) ?: return JSONArray()
+            val tasks = scanTasks(projectPath)
             val arr = JSONArray()
             tasks.forEachIndexed { i, t ->
                 arr.put(JSONObject().apply {
