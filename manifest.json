@@ -1,12 +1,22 @@
 {
-	"APPNAME": "linia",
-	"VERSION": "0.0.2",
-	"REPO": "https://github.com/Deadbush225/Linia",
-	"DESCRIPTION": "A task management app built with Flutter",
-	"ASSETS_PATHS": [
-		"./build/app/outputs/flutter-apk",
-		"./build/linux/x64/release"
-	],
-	"ASSETS_EXTENSIONS": [".apk", ".gz", ".zip", ".tar", ".tar.gz"],
-	"ASSETS_IGNORE_REGEX": ["unaligned", "debug", "mapping"]
+  "APPNAME": "linia",
+  "VERSION": "0.0.3",
+  "REPO": "https://github.com/Deadbush225/Linia",
+  "DESCRIPTION": "A task management app built with Flutter",
+  "ASSETS_PATHS": [
+    "./build/app/outputs/flutter-apk",
+    "./build/linux/x64/release"
+  ],
+  "ASSETS_EXTENSIONS": [
+    ".apk",
+    ".gz",
+    ".zip",
+    ".tar",
+    ".tar.gz"
+  ],
+  "ASSETS_IGNORE_REGEX": [
+    "unaligned",
+    "debug",
+    "mapping"
+  ]
 }
