@@ -123,7 +123,8 @@ DateTime _today() {
 }
 
 List<int>? _parseSemver(String raw) {
-  final match = RegExp(r'(\d+)\.(\d+)\.(\d+)').firstMatch(raw);
+  final cleaned = raw.trim().replaceFirst(RegExp(r'^[vV]\s*'), '');
+  final match = RegExp(r'(\d+)\.(\d+)\.(\d+)').firstMatch(cleaned);
   if (match == null) return null;
   return [
     int.parse(match.group(1)!),
