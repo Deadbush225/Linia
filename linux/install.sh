@@ -5,7 +5,7 @@ set -euo pipefail
 APP_NAME="linia"
 INSTALL_DIR="${HOME}/.local/share/${APP_NAME}"
 GITHUB_OWNER="Deadbush225"
-GITHUB_REPO="Obsidian-Tasks"
+GITHUB_REPO="Linia"
 ASSET_NAME_REGEX="linia-linux.tar.gz"
 BUNDLE_MARKER_RELATIVE=""
 

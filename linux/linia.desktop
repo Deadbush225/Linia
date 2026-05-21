@@ -6,4 +6,4 @@ Exec=@INSTALL_DIR@/linia
 Icon=@INSTALL_DIR@/data/flutter_assets/assets/Linia.png
 Terminal=false
 Categories=Office;Productivity;
-StartupWMClass=linia
+StartupWMClass=Com.deadbush225.linia
