@@ -221,7 +221,7 @@ static void my_application_activate(GApplication* application) {
   FlBinaryMessenger* messenger = fl_engine_get_binary_messenger(engine);
   g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
   self->hotkey_channel = fl_method_channel_new(
-      messenger, "gantt_viewer/global_hotkey", FL_METHOD_CODEC(codec));
+      messenger, "linia/global_hotkey", FL_METHOD_CODEC(codec));
   g_message("Hotkey channel ready.");
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));

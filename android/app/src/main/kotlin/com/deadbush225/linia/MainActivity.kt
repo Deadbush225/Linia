@@ -1,4 +1,4 @@
-package com.example.gantt_viewer
+package com.deadbush225.linia
 
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
@@ -12,7 +12,7 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
 
-    private val CHANNEL = "com.example.gantt_viewer/widget"
+    private val CHANNEL = "com.deadbush225.linia/widget"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)

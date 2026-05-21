@@ -30,7 +30,7 @@ void main() async {
     );
   }
   if (Platform.isAndroid || Platform.isIOS) {
-    HomeWidget.setAppGroupId('com.example.gantt_viewer');
+    HomeWidget.setAppGroupId('com.deadbush225.linia');
   }
 
   if (Platform.isLinux) {
@@ -577,7 +577,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   bool _permissionDenied = false;
   bool _isAlwaysOnTop = false;
   late final TabController _tabs;
-  static const MethodChannel _hotkeyChannel = MethodChannel('gantt_viewer/global_hotkey');
+  static const MethodChannel _hotkeyChannel = MethodChannel('linia/global_hotkey');
   double _aotWidth = 400.0;
   double _aotHeight = 700.0;
   String _aotEdge = 'right';
@@ -955,7 +955,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   Future<void> _openStorageSettings() async {
     if (!Platform.isAndroid) return;
     try {
-      await const MethodChannel('com.example.gantt_viewer/widget').invokeMethod('openAllFilesSettings');
+      await const MethodChannel('com.deadbush225.linia/widget').invokeMethod('openAllFilesSettings');
     } catch (_) { await openAppSettings(); }
   }
 
@@ -1273,7 +1273,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     }).toList();
     await HomeWidget.saveWidgetData<String>('tasks_json', jsonEncode(limited));
     await HomeWidget.updateWidget(androidName: 'GanttWidgetProvider');
-    try { await const MethodChannel('com.example.gantt_viewer/widget').invokeMethod('updateWidget'); } catch (_) {}
+    try { await const MethodChannel('com.deadbush225.linia/widget').invokeMethod('updateWidget'); } catch (_) {}
   }
 
   Future<List<Map<String, dynamic>>> _buildSyncPayloadForAllRoots() async {

@@ -1,29 +1,29 @@
 {
-  "project_info": {
-    "project_number": "106610450876",
-    "project_id": "todo-76f15",
-    "storage_bucket": "todo-76f15.firebasestorage.app"
-  },
-  "client": [
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:106610450876:android:69eed51016702aeedd4bb9",
-        "android_client_info": {
-          "package_name": "com.example.gantt_viewer"
-        }
-      },
-      "oauth_client": [],
-      "api_key": [
-        {
-          "current_key": "AIzaSyBEKM_L00sgPsdltkOmQVX74Jj1QPslfFQ"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": []
-        }
-      }
-    }
-  ],
-  "configuration_version": "1"
+	"project_info": {
+		"project_number": "106610450876",
+		"project_id": "todo-76f15",
+		"storage_bucket": "todo-76f15.firebasestorage.app"
+	},
+	"client": [
+		{
+			"client_info": {
+				"mobilesdk_app_id": "1:106610450876:android:5425ad7d15e77583dd4bb9",
+				"android_client_info": {
+					"package_name": "com.deadbush225.linia"
+				}
+			},
+			"oauth_client": [],
+			"api_key": [
+				{
+					"current_key": "AIzaSyBEKM_L00sgPsdltkOmQVX74Jj1QPslfFQ"
+				}
+			],
+			"services": {
+				"appinvite_service": {
+					"other_platform_oauth_client": []
+				}
+			}
+		}
+	],
+	"configuration_version": "1"
 }

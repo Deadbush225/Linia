@@ -38,6 +38,20 @@ need_cmd() {
 	command -v "$1" >/dev/null 2>&1 || fail "Required command not found: $1"
 }
 
+install_desktop_entry() {
+	local template="$1"
+	local apps_dir="${HOME}/.local/share/applications"
+	local target="${apps_dir}/${APP_NAME}.desktop"
+
+	mkdir -p "$apps_dir"
+	sed "s|@INSTALL_DIR@|$INSTALL_DIR|g" "$template" > "$target"
+	chmod 644 "$target"
+
+	if command -v update-desktop-database >/dev/null 2>&1; then
+		update-desktop-database "$apps_dir" >/dev/null 2>&1 || true
+	fi
+}
+
 check_metadata() {
 	if [[ -z "$GITHUB_OWNER" || "$GITHUB_OWNER" == "YOUR_GITHUB_OWNER" ]]; then
 		fail "Set GITHUB_OWNER in this script."
@@ -83,6 +97,12 @@ install_from_bundle() {
 	mkdir -p "$INSTALL_DIR"
 	cp -a "$resolved_root/." "$INSTALL_DIR/"
 	log "Installed to $INSTALL_DIR"
+
+	local desktop_template="$resolved_root/${APP_NAME}.desktop"
+	if [[ -f "$desktop_template" ]]; then
+		install_desktop_entry "$desktop_template"
+		log "Desktop entry installed to ${HOME}/.local/share/applications/${APP_NAME}.desktop"
+	fi
 }
 
 download_latest_tarball() {

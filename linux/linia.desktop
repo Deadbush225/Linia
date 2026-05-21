@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Linia
+Comment=Task manager for Obsidian projects
+Exec=@INSTALL_DIR@/linia
+Icon=@INSTALL_DIR@/data/flutter_assets/assets/Linia.png
+Terminal=false
+Categories=Office;Productivity;
+StartupWMClass=linia

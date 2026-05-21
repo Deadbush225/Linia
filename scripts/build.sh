@@ -56,7 +56,13 @@ else
 fi
 
 blue "Creating package for Linux"
-cd ./build/linux/x64/release/bundle
+bundle_root=./build/linux/x64/release
+bundle_dir="$bundle_root/bundle"
+
+cp ./linux/install.sh "$bundle_dir/"
+cp ./linux/linia.desktop "$bundle_dir/"
+
+cd "$bundle_dir"
 tar -czvf linia-linux-x64.tar.gz .
 
 green "Linux release build complete."

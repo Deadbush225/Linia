@@ -24,19 +24,19 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions web = FirebaseOptions(
     apiKey: 'AIzaSyAzXfiCh0dFn3Sqw75If5uEFvzw8VoxCMY',
-    appId: '1:106610450876:web:f53421b6cc33ada5dd4bb9',
+    appId: '1:106610450876:web:ed673fafd64b4c59dd4bb9',
     messagingSenderId: '106610450876',
     projectId: 'todo-76f15',
     authDomain: 'todo-76f15.firebaseapp.com',
     storageBucket: 'todo-76f15.firebasestorage.app',
-    measurementId: 'G-HDVTL30H6K',
+    measurementId: 'G-X2QJ3QMZ3F',
   );
 
   // Reuses the available Firebase app id/config so the app can initialize
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyBEKM_L00sgPsdltkOmQVX74Jj1QPslfFQ',
-    appId: '1:106610450876:android:69eed51016702aeedd4bb9',
+    appId: '1:106610450876:android:5425ad7d15e77583dd4bb9',
     messagingSenderId: '106610450876',
     projectId: 'todo-76f15',
     storageBucket: 'todo-76f15.firebasestorage.app',
@@ -64,12 +64,12 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions windows = FirebaseOptions(
     apiKey: 'AIzaSyAzXfiCh0dFn3Sqw75If5uEFvzw8VoxCMY',
-    appId: '1:106610450876:web:ed673fafd64b4c59dd4bb9',
+    appId: '1:106610450876:web:c1685e318d3e04fcdd4bb9',
     messagingSenderId: '106610450876',
     projectId: 'todo-76f15',
     authDomain: 'todo-76f15.firebaseapp.com',
     storageBucket: 'todo-76f15.firebasestorage.app',
-    measurementId: 'G-X2QJ3QMZ3F',
+    measurementId: 'G-7EH37Q1KN1',
   );
 
   static const FirebaseOptions linux = FirebaseOptions(

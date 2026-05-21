@@ -1,4 +1,4 @@
-# gantt_viewer
+# linia
 
 A new Flutter project.
 

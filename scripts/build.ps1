@@ -44,14 +44,23 @@ if (-not $SkipBuild) {
 }
 
 Write-Blue "Creating package for Linux"
-$BundlePath = Join-Path $ProjectRoot "build/linux/x64/release/bundle"
-if (-not (Test-Path $BundlePath)) {
-    Write-Red "Bundle path not found: $BundlePath"
+$BundleRoot = Join-Path $ProjectRoot "build/linux/x64/release"
+$BundlePath = Join-Path $BundleRoot "bundle"
+if (-not (Test-Path $BundleRoot)) {
+    Write-Red "Bundle root not found: $BundleRoot"
     exit 1
 }
-Set-Location $BundlePath
-$TarPath = Join-Path $BundlePath "linia-linux-x64.tar.gz"
-tar -czvf $TarPath .
+
+# copy ./install.sh to the bundle directory
+$InstallScriptSource = Join-Path $ProjectRoot "linux/install.sh"
+Copy-Item $InstallScriptSource -Destination $BundlePath -Force
+
+$DesktopEntrySource = Join-Path $ProjectRoot "linux/linia.desktop"
+Copy-Item $DesktopEntrySource -Destination $BundlePath -Force
+
+Set-Location $BundleRoot
+$TarPath = Join-Path $BundleRoot "linia-linux-x64.tar.gz"
+tar -czvf $TarPath "bundle"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Green "Linux release build complete."

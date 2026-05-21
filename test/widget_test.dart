@@ -7,7 +7,7 @@
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:gantt_viewer/main.dart';
+import 'package:linia/main.dart';
 
 void main() {
   testWidgets('App renders title', (WidgetTester tester) async {

@@ -1,4 +1,4 @@
-package com.example.gantt_viewer
+package com.deadbush225.linia
 
 import android.content.Intent
 import android.graphics.Color

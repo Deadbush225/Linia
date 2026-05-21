@@ -1,4 +1,4 @@
-package com.example.gantt_viewer
+package com.deadbush225.linia
 
 import android.app.AlarmManager
 import android.app.PendingIntent
@@ -52,7 +52,7 @@ class GanttWidgetProvider : AppWidgetProvider() {
     }
 
     companion object {
-        private const val ACTION_REFRESH = "com.example.gantt_viewer.WIDGET_REFRESH"
+        private const val ACTION_REFRESH = "com.deadbush225.linia.WIDGET_REFRESH"
         // Refresh every 30 minutes (minimum meaningful interval)
         private const val REFRESH_INTERVAL_MS = 30 * 60 * 1000L
 
@@ -93,9 +93,15 @@ class GanttWidgetProvider : AppWidgetProvider() {
 
         // ── Markdown scanner (runs in widget process, no Flutter needed) ──────
 
-        /** Reads project root from shared_preferences (key flutter.project_root) */
+        /** Reads project root from shared_preferences */
         private fun getProjectRoot(context: Context): String? {
             val prefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            val active = prefs.getString("flutter.active_project_root", null)
+            if (!active.isNullOrBlank()) return active
+
+            val roots = prefs.getStringSet("flutter.project_roots", null)
+            if (!roots.isNullOrEmpty()) return roots.first()
+
             return prefs.getString("flutter.project_root", null)
         }
 

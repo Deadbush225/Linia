@@ -12,7 +12,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.gantt_viewer"
+    namespace = "com.deadbush225.linia"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -34,7 +34,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.gantt_viewer"
+        applicationId = "com.deadbush225.linia"
         minSdk = flutter.minSdkVersion  // permission_handler requires at least 21
         targetSdk = 34  // required for MANAGE_EXTERNAL_STORAGE to be evaluated
         versionCode = flutter.versionCode

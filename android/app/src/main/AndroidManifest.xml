@@ -40,7 +40,7 @@
             android:label="Linia Tasks Widget">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.example.gantt_viewer.WIDGET_REFRESH" />
+                <action android:name="com.deadbush225.linia.WIDGET_REFRESH" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
