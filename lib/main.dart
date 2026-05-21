@@ -9,6 +9,8 @@ import 'package:http/http.dart' as http;
 import 'package:home_widget/home_widget.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:screen_retriever/screen_retriever.dart';
@@ -150,6 +152,103 @@ Future<String?> _loadUpdateRepo() async {
       return repo.isEmpty ? null : repo;
     }
   } catch (_) {}
+  return null;
+}
+
+class _ReleaseAsset {
+  final String name;
+  final String url;
+  final int size;
+
+  const _ReleaseAsset({
+    required this.name,
+    required this.url,
+    required this.size,
+  });
+}
+
+class _ReleaseInfo {
+  final String tag;
+  final String name;
+  final String body;
+  final String htmlUrl;
+  final List<_ReleaseAsset> assets;
+
+  const _ReleaseInfo({
+    required this.tag,
+    required this.name,
+    required this.body,
+    required this.htmlUrl,
+    required this.assets,
+  });
+}
+
+Future<_ReleaseInfo> _fetchLatestRelease(String repo) async {
+  final uri = Uri.parse('https://api.github.com/repos/$repo/releases/latest');
+  final resp = await http.get(uri, headers: {
+    'Accept': 'application/vnd.github+json',
+    'User-Agent': 'Linia',
+  });
+  if (resp.statusCode != 200) {
+    throw Exception('GitHub API error (${resp.statusCode})');
+  }
+
+  final data = jsonDecode(resp.body) as Map<String, dynamic>;
+  final tag = (data['tag_name'] as String? ?? '').trim();
+  if (tag.isEmpty) throw Exception('No release tag found');
+
+  final assets = <_ReleaseAsset>[];
+  final rawAssets = (data['assets'] as List?) ?? const [];
+  for (final raw in rawAssets) {
+    if (raw is! Map<String, dynamic>) continue;
+    final name = (raw['name'] as String? ?? '').trim();
+    final url = (raw['browser_download_url'] as String? ?? '').trim();
+    final size = (raw['size'] as num?)?.toInt() ?? 0;
+    if (name.isEmpty || url.isEmpty) continue;
+    assets.add(_ReleaseAsset(name: name, url: url, size: size));
+  }
+
+  return _ReleaseInfo(
+    tag: tag,
+    name: (data['name'] as String? ?? '').trim(),
+    body: (data['body'] as String? ?? '').trim(),
+    htmlUrl: (data['html_url'] as String? ?? '').trim(),
+    assets: assets,
+  );
+}
+
+_ReleaseAsset? _pickAssetForPlatform(List<_ReleaseAsset> assets) {
+  if (assets.isEmpty) return null;
+
+  if (Platform.isLinux) {
+    final candidates = assets.where((asset) {
+      final name = asset.name.toLowerCase();
+      return name.contains('linux') && (name.endsWith('.tar.gz') || name.endsWith('.tgz'));
+    }).toList();
+    if (candidates.isNotEmpty) return candidates.first;
+
+    return assets.firstWhere(
+      (asset) {
+        final name = asset.name.toLowerCase();
+        return name.endsWith('.tar.gz') || name.endsWith('.tgz');
+      },
+      orElse: () => assets.first,
+    );
+  }
+
+  if (Platform.isAndroid) {
+    final candidates = assets.where((asset) {
+      final name = asset.name.toLowerCase();
+      return name.contains('android') && name.endsWith('.apk');
+    }).toList();
+    if (candidates.isNotEmpty) return candidates.first;
+
+    return assets.firstWhere(
+      (asset) => asset.name.toLowerCase().endsWith('.apk'),
+      orElse: () => assets.first,
+    );
+  }
+
   return null;
 }
 
@@ -1875,6 +1974,218 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     ));
   }
 
+  Future<void> _openAboutDialog() async {
+    final info = await PackageInfo.fromPlatform();
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('About Linia'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Version ${info.version} (${info.buildNumber})'),
+            const SizedBox(height: 8),
+            const Text('Auto-updates are delivered from GitHub Releases.'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+          FilledButton.icon(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _runUpdateFlow();
+            },
+            icon: const Icon(Icons.system_update_alt),
+            label: const Text('Check & download'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _runUpdateFlow() async {
+    final repo = await _loadUpdateRepo();
+    if (repo == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Update repo not configured in this build.')),
+      );
+      return;
+    }
+
+    _showBlockingDialog('Checking for updates…');
+    _ReleaseInfo release;
+    try {
+      release = await _fetchLatestRelease(repo);
+    } catch (_) {
+      _hideBlockingDialog();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Update check failed.')),
+      );
+      return;
+    }
+    _hideBlockingDialog();
+
+    final info = await PackageInfo.fromPlatform();
+    final current = info.version.trim();
+    if (!_isNewerVersion(current, release.tag)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You are up to date.')),
+      );
+      return;
+    }
+
+    final asset = _pickAssetForPlatform(release.assets);
+    if (asset == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No matching update asset found.')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Update available'),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('New version: ${release.tag}'),
+              if (release.name.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(release.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+              ],
+              if (release.body.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(release.body, style: const TextStyle(fontSize: 12, color: Colors.white70)),
+              ],
+              const SizedBox(height: 10),
+              Text('Package: ${asset.name}', style: const TextStyle(fontSize: 12, color: Colors.white70)),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Later'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Download'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    _showBlockingDialog('Downloading update…');
+    File downloaded;
+    try {
+      downloaded = await _downloadReleaseAsset(asset);
+    } catch (_) {
+      _hideBlockingDialog();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Download failed.')),
+      );
+      return;
+    }
+    _hideBlockingDialog();
+
+    try {
+      if (Platform.isLinux) {
+        _showBlockingDialog('Installing update…');
+        await _installLinuxUpdate(downloaded);
+        _hideBlockingDialog();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Update installed. Please restart Linia.')),
+        );
+      } else if (Platform.isAndroid) {
+        final result = await OpenFilex.open(downloaded.path);
+        if (!mounted) return;
+        if (result.type == ResultType.error) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to launch installer.')),
+          );
+        }
+      }
+    } catch (_) {
+      _hideBlockingDialog();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Update install failed.')),
+      );
+    }
+  }
+
+  void _showBlockingDialog(String message) {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        content: Row(
+          children: [
+            const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Text(message)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _hideBlockingDialog() {
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).maybePop();
+  }
+
+  Future<File> _downloadReleaseAsset(_ReleaseAsset asset) async {
+    final tempDir = await getTemporaryDirectory();
+    final outFile = File('${tempDir.path}/${asset.name}');
+    final resp = await http.get(Uri.parse(asset.url));
+    if (resp.statusCode != 200) {
+      throw Exception('Download failed (${resp.statusCode})');
+    }
+    await outFile.writeAsBytes(resp.bodyBytes, flush: true);
+    return outFile;
+  }
+
+  Future<void> _installLinuxUpdate(File tarball) async {
+    final home = Platform.environment['HOME'];
+    if (home == null || home.isEmpty) {
+      throw Exception('HOME not set');
+    }
+    final installDir = Directory('$home/.local/share/linia');
+    if (!await installDir.exists()) {
+      await installDir.create(recursive: true);
+    }
+    final result = await Process.run(
+      'tar',
+      ['-xzf', tarball.path, '-C', installDir.path],
+    );
+    if (result.exitCode != 0) {
+      throw Exception('tar failed: ${result.stderr}');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final showTabs = _projectRoot != null && !_permissionDenied;
@@ -1927,6 +2238,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             icon: const Icon(Icons.settings, size: 20),
             tooltip: 'Settings',
             onPressed: _openSettings,
+            visualDensity: VisualDensity.compact,
+          ),
+          IconButton(
+            icon: const Icon(Icons.info_outline, size: 20),
+            tooltip: 'About',
+            onPressed: _openAboutDialog,
             visualDensity: VisualDensity.compact,
           ),
           IconButton(
@@ -3786,93 +4103,6 @@ class _SettingsScreenState extends State<_SettingsScreen> {
     super.dispose();
   }
 
-  Future<void> _manualUpdateCheck() async {
-    final repo = await _loadUpdateRepo();
-    if (repo == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Update repo not configured in this build.')),
-      );
-      return;
-    }
-
-    try {
-      final uri = Uri.parse('https://api.github.com/repos/$repo/releases/latest');
-      final resp = await http.get(uri, headers: {
-        'Accept': 'application/vnd.github+json',
-        'User-Agent': 'Linia',
-      });
-      if (resp.statusCode != 200) throw Exception('GitHub API error');
-
-      final data = jsonDecode(resp.body) as Map<String, dynamic>;
-      final tag = (data['tag_name'] as String? ?? '').trim();
-      final url = (data['html_url'] as String? ?? '').trim();
-      final name = (data['name'] as String? ?? '').trim();
-      final body = (data['body'] as String? ?? '').trim();
-      if (tag.isEmpty) throw Exception('No release tag found');
-
-      final info = await PackageInfo.fromPlatform();
-      final current = info.version.trim();
-      if (!_isNewerVersion(current, tag)) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('You are up to date.')),
-        );
-        return;
-      }
-
-      if (!mounted) return;
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('Update available'),
-          content: SizedBox(
-            width: 420,
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('New version: $tag'),
-                  if (name.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  ],
-                  if (body.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Text(body, style: const TextStyle(fontSize: 12, color: Colors.white70)),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Later'),
-            ),
-            if (url.isNotEmpty)
-              FilledButton(
-                onPressed: () async {
-                  final uri = Uri.tryParse(url);
-                  if (uri != null) {
-                    await launchUrl(uri, mode: LaunchMode.externalApplication);
-                  }
-                  if (mounted) Navigator.pop(context);
-                },
-                child: const Text('Open release'),
-              ),
-          ],
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Update check failed.')),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -3900,12 +4130,6 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                FilledButton.icon(
-                  onPressed: _manualUpdateCheck,
-                  icon: const Icon(Icons.system_update_alt),
-                  label: const Text('Check for updates'),
-                ),
-                const SizedBox(height: 12),
                 FilledButton.icon(
                   onPressed: _savePrefs,
                   icon: const Icon(Icons.save),
