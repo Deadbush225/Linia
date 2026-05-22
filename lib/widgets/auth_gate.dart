@@ -1,4 +1,3 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../sync_service.dart';
@@ -9,16 +8,17 @@ class AuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
+    return StreamBuilder<bool>(
+      stream: SyncService.authStateChanges(),
+      initialData: false,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        if (snapshot.data == null) {
-          return const _EmailPasswordAuthScreen();
+        if (snapshot.data != true) {
+          return const _GoogleAuthScreen();
         }
         return child;
       },
@@ -26,52 +26,24 @@ class AuthGate extends StatelessWidget {
   }
 }
 
-class _EmailPasswordAuthScreen extends StatefulWidget {
-  const _EmailPasswordAuthScreen();
+class _GoogleAuthScreen extends StatefulWidget {
+  const _GoogleAuthScreen();
 
   @override
-  State<_EmailPasswordAuthScreen> createState() => _EmailPasswordAuthScreenState();
+  State<_GoogleAuthScreen> createState() => _GoogleAuthScreenState();
 }
 
-class _EmailPasswordAuthScreenState extends State<_EmailPasswordAuthScreen> {
-  final _emailCtrl = TextEditingController();
-  final _passCtrl = TextEditingController();
-  bool _registerMode = false;
+class _GoogleAuthScreenState extends State<_GoogleAuthScreen> {
   bool _busy = false;
   String? _error;
 
-  @override
-  void dispose() {
-    _emailCtrl.dispose();
-    _passCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    final email = _emailCtrl.text.trim();
-    final pass = _passCtrl.text;
-    if (email.isEmpty || pass.isEmpty) {
-      setState(() => _error = 'Email and password are required');
-      return;
-    }
-
+  Future<void> _signInWithGoogle() async {
     setState(() {
       _busy = true;
       _error = null;
     });
 
-    String? err;
-    if (_registerMode) {
-      err = await SyncService.register(
-        baseUrl: '',
-        email: email,
-        password: pass,
-        firstName: '',
-        lastName: '',
-      );
-    } else {
-      err = await SyncService.login(email: email, password: pass);
-    }
+    final err = await SyncService.signInWithGoogle();
 
     if (!mounted) return;
     setState(() {
@@ -95,27 +67,15 @@ class _EmailPasswordAuthScreenState extends State<_EmailPasswordAuthScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _registerMode ? 'Create Account' : 'Sign In',
+                    'Sign In',
                     style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Sign in is required before cloud sync can read or write your tasks.',
+                    'Sign in with your Google account to use cloud sync and switch accounts anytime.',
                     style: TextStyle(color: Colors.white70),
                   ),
                   const SizedBox(height: 16),
-                  TextField(
-                    controller: _emailCtrl,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(labelText: 'Email'),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _passCtrl,
-                    obscureText: true,
-                    decoration: const InputDecoration(labelText: 'Password'),
-                    onSubmitted: (_) => _submit(),
-                  ),
                   if (_error != null) ...[
                     const SizedBox(height: 10),
                     Text(_error!, style: const TextStyle(color: Colors.redAccent)),
@@ -124,30 +84,14 @@ class _EmailPasswordAuthScreenState extends State<_EmailPasswordAuthScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
-                      onPressed: _busy ? null : _submit,
+                      onPressed: _busy ? null : _signInWithGoogle,
                       child: _busy
                           ? const SizedBox(
                               width: 16,
                               height: 16,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : Text(_registerMode ? 'Create Account' : 'Sign In'),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Center(
-                    child: TextButton(
-                      onPressed: _busy
-                          ? null
-                          : () => setState(() {
-                                _registerMode = !_registerMode;
-                                _error = null;
-                              }),
-                      child: Text(
-                        _registerMode
-                            ? 'Already have an account? Sign in'
-                            : 'No account yet? Create one',
-                      ),
+                          : const Text('Continue with Google'),
                     ),
                   ),
                 ],

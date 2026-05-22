@@ -1991,8 +1991,41 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   void _openSettings() {
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => const _SettingsScreen(),
+      builder: (_) => _SettingsScreen(onSignOut: _signOutAndSwitchAccount),
     ));
+  }
+
+  Future<void> _signOutAndSwitchAccount() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Sign out?'),
+        content: const Text(
+          'This will sign you out of cloud sync on this device so you can switch accounts.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Sign out'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    await SyncService.clearCredentials();
+    if (!mounted) return;
+    setState(() {
+      _syncStatus = _SyncStatus.idle;
+      _syncInfo = '';
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Signed out. You can now switch accounts.')),
+    );
   }
 
   Future<void> _openAboutDialog() async {
@@ -2296,6 +2329,19 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             onPressed: _openSettings,
             visualDensity: VisualDensity.compact,
           ),
+          if (_syncStatus != _SyncStatus.syncing)
+            IconButton(
+              icon: const Icon(Icons.logout, size: 20),
+              tooltip: 'Sign out / switch account',
+              onPressed: () async {
+                if (await SyncService.isConfigured) {
+                  _signOutAndSwitchAccount();
+                } else {
+                  _openSyncSetup();
+                }
+              },
+              visualDensity: VisualDensity.compact,
+            ),
           IconButton(
             icon: const Icon(Icons.info_outline, size: 20),
             tooltip: 'About',
@@ -3811,11 +3857,6 @@ class _SyncButton extends StatelessWidget {
   }
 }
 
-/// Bottom-sheet for configuring the sync server URL + credentials.
-/// Supports three modes: login, register (with OTP verification step), and
-/// a quick "change URL / re-login" mode when credentials already exist.
-enum _AuthMode { login, register }
-
 class _SyncSetupSheet extends StatefulWidget {
   final VoidCallback onSaved;
   const _SyncSetupSheet({required this.onSaved});
@@ -3824,22 +3865,9 @@ class _SyncSetupSheet extends StatefulWidget {
 }
 
 class _SyncSetupSheetState extends State<_SyncSetupSheet> {
-  // ── shared ──────────────────────────────────────────────────────────────────
-  final _urlCtrl   = TextEditingController();
-  final _emailCtrl = TextEditingController();
-  final _passCtrl  = TextEditingController();
-  bool _obscure    = true;
-  bool _busy       = false;
+  bool _busy = false;
   String? _error;
-  _AuthMode _mode  = _AuthMode.login;
-
-  // ── register-only ────────────────────────────────────────────────────────────
-  final _firstNameCtrl = TextEditingController();
-  final _lastNameCtrl  = TextEditingController();
-
-  // ── OTP verification step ─────────────────────────────────────────────────
-  bool _waitingForOtp = false;
-  final _otpCtrl      = TextEditingController();
+  String _savedEmail = '';
 
   @override
   void initState() {
@@ -3851,71 +3879,36 @@ class _SyncSetupSheetState extends State<_SyncSetupSheet> {
     final creds = await SyncService.savedCredentials();
     if (!mounted) return;
     setState(() {
-      _urlCtrl.text   = creds.baseUrl;
-      _emailCtrl.text = creds.email;
+      _savedEmail = creds.email;
     });
   }
 
-  @override
-  void dispose() {
-    _urlCtrl.dispose();
-    _emailCtrl.dispose();
-    _passCtrl.dispose();
-    _firstNameCtrl.dispose();
-    _lastNameCtrl.dispose();
-    _otpCtrl.dispose();
-    super.dispose();
-  }
-
-  // ── Login ──────────────────────────────────────────────────────────────────
-  Future<void> _doLogin() async {
-    final url   = _urlCtrl.text.trim();
-    final email = _emailCtrl.text.trim();
-    final pass  = _passCtrl.text;
-    if (url.isEmpty || email.isEmpty || pass.isEmpty) {
-      setState(() => _error = 'All fields are required'); return;
-    }
+  Future<void> _connectGoogle() async {
     setState(() { _busy = true; _error = null; });
-    await SyncService.configure(baseUrl: url, email: email, password: pass);
-    final err = await SyncService.login(email: email, password: pass);
+    final err = await SyncService.signInWithGoogle();
     if (!mounted) return;
-    if (err != null) { setState(() { _busy = false; _error = err; }); return; }
+    if (err != null) {
+      setState(() {
+        _busy = false;
+        _error = err;
+      });
+      return;
+    }
     widget.onSaved();
   }
 
-  // ── Register → OTP flow ────────────────────────────────────────────────────
-  Future<void> _doRegister() async {
-    final url   = _urlCtrl.text.trim();
-    final email = _emailCtrl.text.trim();
-    final pass  = _passCtrl.text;
-    final first = _firstNameCtrl.text.trim();
-    final last  = _lastNameCtrl.text.trim();
-    if (url.isEmpty || email.isEmpty || pass.isEmpty || first.isEmpty || last.isEmpty) {
-      setState(() => _error = 'All fields are required'); return;
+  Future<void> _switchAccount() async {
+    setState(() { _busy = true; _error = null; });
+    await SyncService.clearCredentials();
+    final err = await SyncService.signInWithGoogle();
+    if (!mounted) return;
+    if (err != null) {
+      setState(() {
+        _busy = false;
+        _error = err;
+      });
+      return;
     }
-    setState(() { _busy = true; _error = null; });
-    final err = await SyncService.register(
-      baseUrl: url, email: email, password: pass,
-      firstName: first, lastName: last,
-    );
-    if (!mounted) return;
-    if (err != null) { setState(() { _busy = false; _error = err; }); return; }
-    if (!mounted) return;
-    setState(() { _busy = false; _waitingForOtp = false; });
-    widget.onSaved();
-  }
-
-  Future<void> _doVerifyOtp() async {
-    final url   = _urlCtrl.text.trim();
-    final email = _emailCtrl.text.trim();
-    final otp   = _otpCtrl.text.trim();
-    if (otp.isEmpty) { setState(() => _error = 'Enter the OTP from your email'); return; }
-    setState(() { _busy = true; _error = null; });
-    final err = await SyncService.verifyOtp(baseUrl: url, email: email, otp: otp);
-    if (!mounted) return;
-    if (err != null) { setState(() { _busy = false; _error = err; }); return; }
-    // verifyOtp caches the token, now store password for future re-logins
-    await SyncService.configure(baseUrl: url, email: email, password: _passCtrl.text);
     widget.onSaved();
   }
 
@@ -3937,7 +3930,6 @@ class _SyncSetupSheetState extends State<_SyncSetupSheet> {
     );
   }
 
-  // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -3947,14 +3939,12 @@ class _SyncSetupSheetState extends State<_SyncSetupSheet> {
       ),
       child: SingleChildScrollView(
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // ── Header ──────────────────────────────────────────────────────────
           Row(children: [
             const Icon(Icons.cloud_sync, color: Color(0xFF7C6AF7)),
             const SizedBox(width: 10),
-            Text(
-              _waitingForOtp ? 'Verify your email'
-                  : _mode == _AuthMode.register ? 'Create account' : 'Cloud Sync Setup',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            const Text(
+              'Cloud Sync Setup',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const Spacer(),
             IconButton(
@@ -3964,70 +3954,26 @@ class _SyncSetupSheetState extends State<_SyncSetupSheet> {
             ),
           ]),
           const SizedBox(height: 4),
-          Text(
-            _waitingForOtp
-                ? 'Enter the 6-digit code sent to ${_emailCtrl.text}.'
-                : _mode == _AuthMode.register
-                    ? 'Create a new account on your sync server.'
-                    : 'Enter your sync server URL and credentials.',
-            style: const TextStyle(fontSize: 12, color: Colors.white54),
+          const Text(
+            'Use your Google account to connect cloud sync.',
+            style: TextStyle(fontSize: 12, color: Colors.white54),
           ),
           const SizedBox(height: 16),
 
-          if (!_waitingForOtp) ...[
-            // ── Server URL ───────────────────────────────────────────────────
-            _field(_urlCtrl, 'Server URL',
-                hint: 'https://yourname.heliohost.us/gantt/backend'),
-            const SizedBox(height: 10),
-
-            // ── Register-only extra fields ───────────────────────────────────
-            if (_mode == _AuthMode.register) ...[
-              Row(children: [
-                Expanded(child: _field(_firstNameCtrl, 'First name')),
-                const SizedBox(width: 10),
-                Expanded(child: _field(_lastNameCtrl, 'Last name')),
-              ]),
-              const SizedBox(height: 10),
-            ],
-
-            // ── Email & password ─────────────────────────────────────────────
-            _field(_emailCtrl, 'Email', hint: 'you@example.com'),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _passCtrl,
-              obscureText: _obscure,
-              style: const TextStyle(fontSize: 14),
-              decoration: InputDecoration(
-                labelText: 'Password',
-                filled: true, fillColor: const Color(0xFF252535),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                suffixIcon: IconButton(
-                  icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, size: 18),
-                  onPressed: () => setState(() => _obscure = !_obscure),
-                ),
+          if (_savedEmail.trim().isNotEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF252535),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                'Current account: $_savedEmail',
+                style: const TextStyle(fontSize: 13),
               ),
             ),
-          ] else ...[
-            // ── OTP field ────────────────────────────────────────────────────
-            TextField(
-              controller: _otpCtrl,
-              autofocus: true,
-              keyboardType: TextInputType.number,
-              maxLength: 6,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 24, letterSpacing: 8),
-              decoration: InputDecoration(
-                hintText: '000000',
-                hintStyle: const TextStyle(color: Colors.white24),
-                counterText: '',
-                filled: true, fillColor: const Color(0xFF252535),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-              ),
-              onSubmitted: (_) => _doVerifyOtp(),
-            ),
-          ],
 
-          // ── Error ──────────────────────────────────────────────────────────
           if (_error != null) ...[
             const SizedBox(height: 8),
             Row(children: [
@@ -4038,52 +3984,35 @@ class _SyncSetupSheetState extends State<_SyncSetupSheet> {
           ],
           const SizedBox(height: 20),
 
-          // ── Primary action button ──────────────────────────────────────────
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed: _busy ? null : () {
-                if (_waitingForOtp)              _doVerifyOtp();
-                else if (_mode == _AuthMode.register) _doRegister();
-                else                             _doLogin();
-              },
+              onPressed: _busy ? null : _connectGoogle,
               icon: _busy
                   ? const SizedBox(width: 16, height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : Icon(_waitingForOtp ? Icons.check_circle_outline
-                        : _mode == _AuthMode.register ? Icons.person_add : Icons.login),
-              label: Text(_busy ? 'Please wait…'
-                  : _waitingForOtp ? 'Verify & sign in'
-                  : _mode == _AuthMode.register ? 'Create account' : 'Connect & sync'),
+                  : const Icon(Icons.login),
+              label: Text(_busy ? 'Please wait…' : 'Continue with Google'),
             ),
           ),
-          const SizedBox(height: 10),
-
-          // ── Mode toggle ────────────────────────────────────────────────────
-          if (!_waitingForOtp)
-            Center(
-              child: TextButton(
-                onPressed: () => setState(() {
-                  _mode  = _mode == _AuthMode.login ? _AuthMode.register : _AuthMode.login;
-                  _error = null;
-                }),
-                child: Text(
-                  _mode == _AuthMode.login ? "Don't have an account? Sign up" : 'Already have an account? Log in',
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF7C6AF7)),
-                ),
-              ),
+          const SizedBox(height: 6),
+          Center(
+            child: TextButton.icon(
+              onPressed: _busy ? null : _switchAccount,
+              icon: const Icon(Icons.switch_account, size: 16),
+              label: const Text('Switch Google account', style: TextStyle(fontSize: 12)),
             ),
+          ),
 
-          if (!_waitingForOtp && Platform.isLinux)
+          if (Platform.isLinux)
             Center(
               child: TextButton.icon(
                 onPressed: _busy ? null : _debugRestProbe,
                 icon: const Icon(Icons.bug_report, size: 16),
-                label: const Text('Test REST connection', style: TextStyle(fontSize: 12)),
+                label: const Text('Test Firestore connection', style: TextStyle(fontSize: 12)),
               ),
             ),
 
-          // ── Disconnect ────────────────────────────────────────────────────
           Center(
             child: TextButton(
               onPressed: () async {
@@ -4098,19 +4027,6 @@ class _SyncSetupSheetState extends State<_SyncSetupSheet> {
       ),
     );
   }
-
-  Widget _field(TextEditingController ctrl, String label, {String hint = ''}) =>
-      TextField(
-        controller: ctrl,
-        style: const TextStyle(fontSize: 14),
-        decoration: InputDecoration(
-          labelText: label,
-          hintText: hint,
-          hintStyle: const TextStyle(fontSize: 12, color: Colors.white24),
-          filled: true, fillColor: const Color(0xFF252535),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-        ),
-      );
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -4118,7 +4034,8 @@ class _SyncSetupSheetState extends State<_SyncSetupSheet> {
 // ══════════════════════════════════════════════════════════════════════════════
 
 class _SettingsScreen extends StatefulWidget {
-  const _SettingsScreen();
+  final Future<void> Function() onSignOut;
+  const _SettingsScreen({required this.onSignOut});
   @override
   State<_SettingsScreen> createState() => _SettingsScreenState();
 }
@@ -4191,6 +4108,19 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                   onPressed: _savePrefs,
                   icon: const Icon(Icons.save),
                   label: const Text('Save'),
+                ),
+                const SizedBox(height: 16),
+                const Divider(height: 1),
+                const SizedBox(height: 8),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.logout),
+                  title: const Text('Sign out / switch account'),
+                  subtitle: const Text(
+                    'Explicitly sign out from cloud sync and connect another Google account.',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  onTap: widget.onSignOut,
                 ),
               ],
             )
