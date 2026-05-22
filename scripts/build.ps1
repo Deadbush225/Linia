@@ -32,12 +32,12 @@ if (-not $SkipBuild) {
     Write-Blue "Starting build process..."
 
     Write-Blue "Building release versions for Android"
-    flutter build apk --release
+    flutter build apk --release --dart-define-from-file=.env
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     Write-Green "Android release build complete."
 
     Write-Blue "Building release version for Linux"
-    flutter build linux --release
+    flutter build linux --release --dart-define-from-file=.env
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 } else {
     Write-Blue "Skipping build..."

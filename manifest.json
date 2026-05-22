@@ -1,6 +1,6 @@
 {
   "APPNAME": "linia",
-  "VERSION": "0.0.3",
+  "VERSION": "0.0.4",
   "REPO": "https://github.com/Deadbush225/Linia",
   "DESCRIPTION": "A task management app built with Flutter",
   "ASSETS_PATHS": [
