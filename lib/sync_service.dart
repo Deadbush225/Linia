@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -34,31 +35,12 @@ class SyncResult {
 }
 
 class SyncService {
-  static const _prefKeyCollection = 'sync_collection';
+  static const _prefKeyBaseUrl = 'sync_base_url';
+  static const _prefKeyEmail = 'sync_email';
   static const _firestoreHost = 'firestore.googleapis.com';
-  static final _apiKey = DefaultFirebaseOptions.linux.apiKey;
-  static final _projectId = DefaultFirebaseOptions.linux.projectId;
 
-  static String _collectionFromInput(String raw) {
-    final v = raw.trim();
-    if (v.isEmpty) return 'tasks';
-    if (!v.contains('/')) return v;
-    final parts = v.split('/').where((p) => p.trim().isNotEmpty).toList();
-    return parts.isEmpty ? 'tasks' : parts.last;
-  }
-
-  static Future<String> _collectionName() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_prefKeyCollection) ?? 'tasks';
-  }
-
-  static Future<String> _archiveCollectionName() async {
-    return '${await _collectionName()}_archive';
-  }
-
-  static Future<String> _projectsCollectionName() async {
-    return '${await _collectionName()}_projects';
-  }
+  static String get _apiKey => DefaultFirebaseOptions.currentPlatform.apiKey;
+  static String get _projectId => DefaultFirebaseOptions.currentPlatform.projectId;
 
   static Future<void> configure({
     required String baseUrl,
@@ -66,24 +48,40 @@ class SyncService {
     required String password,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_prefKeyCollection, _collectionFromInput(baseUrl));
+    await prefs.setString(_prefKeyBaseUrl, baseUrl.trim());
+    await prefs.setString(_prefKeyEmail, email.trim());
   }
 
   static Future<String?> get baseUrl async {
-    return _collectionName();
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_prefKeyBaseUrl) ?? '';
   }
 
-  static Future<bool> get isConfigured async => true;
+  static Future<bool> get isConfigured async => FirebaseAuth.instance.currentUser != null;
 
   static Future<void> clearCredentials() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_prefKeyCollection);
+    await prefs.remove(_prefKeyBaseUrl);
+    await prefs.remove(_prefKeyEmail);
+    await FirebaseAuth.instance.signOut();
   }
 
   static Future<String?> login({String? email, String? password}) async {
     try {
+      final normalizedEmail = (email ?? '').trim();
+      final pwd = password ?? '';
+      if (normalizedEmail.isEmpty || pwd.isEmpty) {
+        return 'Email and password are required.';
+      }
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: normalizedEmail,
+        password: pwd,
+      );
+      await configure(baseUrl: '', email: normalizedEmail, password: pwd);
       await _readRemote();
       return null;
+    } on FirebaseAuthException catch (ex) {
+      return ex.message ?? ex.code;
     } catch (ex) {
       return ex.toString();
     }
@@ -105,10 +103,10 @@ class SyncService {
   }
 
   static Map<String, dynamic> _normalizeTask(Map<String, dynamic> raw) {
-    final noteBody = raw['noteBody']?.toString()
-        ?? raw['note_body']?.toString()
-        ?? raw['description']?.toString()
-        ?? '';
+    final noteBody = raw['noteBody']?.toString() ??
+        raw['note_body']?.toString() ??
+        raw['description']?.toString() ??
+        '';
 
     return {
       'id': raw['id']?.toString() ?? '',
@@ -122,7 +120,6 @@ class SyncService {
       'rawFrontmatter': raw['rawFrontmatter']?.toString(),
       'isArchived': raw['isArchived'] == true,
       'tags': _asStringList(raw['tags']),
-      // Keep legacy field in sync for compatibility with older clients.
       'description': noteBody,
       'assignee': raw['assignee']?.toString() ?? '',
       'projectRoot': raw['projectRoot']?.toString() ?? '',
@@ -131,20 +128,61 @@ class SyncService {
     };
   }
 
-  static Uri _collectionUri(String collection, {Map<String, String>? query}) {
+  static User _requireUser() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw Exception('Not signed in. Please sign in first.');
+    }
+    return user;
+  }
+
+  static Future<String> _idToken() async {
+    final user = _requireUser();
+    final token = await user.getIdToken(true);
+    if (token == null || token.isEmpty) {
+      throw Exception('Unable to acquire Firebase Auth token.');
+    }
+    return token;
+  }
+
+  static String _userCollectionPath(String uid, String collection) {
+    return 'users/${Uri.encodeComponent(uid)}/$collection';
+  }
+
+  static Uri _collectionUri(String uid, String collection, {Map<String, String>? query}) {
     return Uri.https(
       _firestoreHost,
-      '/v1/projects/$_projectId/databases/(default)/documents/$collection',
+      '/v1/projects/$_projectId/databases/(default)/documents/${_userCollectionPath(uid, collection)}',
       query,
     );
   }
 
-  static Uri _documentUri(String collection, String documentId, {Map<String, String>? query}) {
+  static Uri _documentUri(
+    String uid,
+    String collection,
+    String documentId, {
+    Map<String, String>? query,
+  }) {
     return Uri.https(
       _firestoreHost,
-      '/v1/projects/$_projectId/databases/(default)/documents/$collection/${Uri.encodeComponent(documentId)}',
+      '/v1/projects/$_projectId/databases/(default)/documents/${_userCollectionPath(uid, collection)}/${Uri.encodeComponent(documentId)}',
       query,
     );
+  }
+
+  static Map<String, String> _jsonHeaders(String token) {
+    return {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+  }
+
+  static Map<String, String> _authHeaders(String token) {
+    return {
+      'Accept': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
   }
 
   static void _throwForHttpError(http.Response response, String operation) {
@@ -163,8 +201,7 @@ class SyncService {
       return {
         'mapValue': {
           'fields': {
-            for (final entry in value.entries)
-              entry.key.toString(): _encodeValue(entry.value),
+            for (final entry in value.entries) entry.key.toString(): _encodeValue(entry.value),
           },
         },
       };
@@ -182,12 +219,8 @@ class SyncService {
   static dynamic _decodeValue(Map<String, dynamic> value) {
     if (value.containsKey('nullValue')) return null;
     if (value.containsKey('booleanValue')) return value['booleanValue'] == true;
-    if (value.containsKey('integerValue')) {
-      return int.tryParse(value['integerValue'].toString()) ?? 0;
-    }
-    if (value.containsKey('doubleValue')) {
-      return double.tryParse(value['doubleValue'].toString()) ?? 0.0;
-    }
+    if (value.containsKey('integerValue')) return int.tryParse(value['integerValue'].toString()) ?? 0;
+    if (value.containsKey('doubleValue')) return double.tryParse(value['doubleValue'].toString()) ?? 0.0;
     if (value.containsKey('timestampValue')) return value['timestampValue'].toString();
     if (value.containsKey('stringValue')) return value['stringValue']?.toString() ?? '';
     if (value.containsKey('mapValue')) {
@@ -225,6 +258,8 @@ class SyncService {
   }
 
   static Future<List<Map<String, dynamic>>> _listCollection(String collection) async {
+    final user = _requireUser();
+    final token = await _idToken();
     final docs = <Map<String, dynamic>>[];
     String? pageToken;
 
@@ -234,7 +269,10 @@ class SyncService {
         'pageSize': '300',
         if (pageToken != null && pageToken.isNotEmpty) 'pageToken': pageToken,
       };
-      final response = await http.get(_collectionUri(collection, query: query));
+      final response = await http.get(
+        _collectionUri(user.uid, collection, query: query),
+        headers: _authHeaders(token),
+      );
       if (response.statusCode == 404) return [];
       _throwForHttpError(response, 'list $collection');
 
@@ -249,10 +287,16 @@ class SyncService {
     return docs;
   }
 
-  static Future<void> _writeDocument(String collection, String documentId, Map<String, dynamic> data) async {
+  static Future<void> _writeDocument(
+    String collection,
+    String documentId,
+    Map<String, dynamic> data,
+  ) async {
+    final user = _requireUser();
+    final token = await _idToken();
     final response = await http.patch(
-      _documentUri(collection, documentId, query: {'key': _apiKey}),
-      headers: const {'Content-Type': 'application/json'},
+      _documentUri(user.uid, collection, documentId, query: {'key': _apiKey}),
+      headers: _jsonHeaders(token),
       body: jsonEncode({
         'fields': {
           for (final entry in data.entries) entry.key: _encodeValue(entry.value),
@@ -263,23 +307,31 @@ class SyncService {
   }
 
   static Future<void> _deleteDocument(String collection, String documentId) async {
+    final user = _requireUser();
+    final token = await _idToken();
     final response = await http.delete(
-      _documentUri(collection, documentId, query: {'key': _apiKey}),
+      _documentUri(user.uid, collection, documentId, query: {'key': _apiKey}),
+      headers: _authHeaders(token),
     );
     if (response.statusCode == 404) return;
     _throwForHttpError(response, 'delete $collection/$documentId');
   }
 
   static Future<String> debugProbe() async {
-    final collection = await _collectionName();
-    final url = _collectionUri(collection, query: {'key': _apiKey, 'pageSize': '5'});
     try {
-      final response = await http.get(url);
+      final user = _requireUser();
+      final token = await _idToken();
+      final url = _collectionUri(
+        user.uid,
+        'tasks',
+        query: {'key': _apiKey, 'pageSize': '5'},
+      );
+      final response = await http.get(url, headers: _authHeaders(token));
       if (response.statusCode == 404) {
-        return 'REST OK, but collection "$collection" not found (404).';
+        return 'REST OK, but no tasks collection for this user yet (404).';
       }
       if (response.statusCode == 401 || response.statusCode == 403) {
-        return 'REST denied (${response.statusCode}). Check Firestore rules or enable anonymous access.';
+        return 'REST denied (${response.statusCode}). Check Firestore rules.';
       }
       _throwForHttpError(response, 'probe');
 
@@ -290,18 +342,18 @@ class SyncService {
           .where((id) => id.isNotEmpty)
           .toList();
 
-      return 'REST OK. Collection "$collection" returned ${documents.length} docs: ${ids.join(', ')}';
+      return 'REST OK for uid ${user.uid}. tasks returned ${documents.length} docs: ${ids.join(', ')}';
     } catch (ex) {
       return 'REST probe failed: $ex';
     }
   }
 
   static Future<List<Map<String, dynamic>>> _readRemote() async {
-    return _listCollection(await _collectionName());
+    return _listCollection('tasks');
   }
 
   static Future<List<Map<String, dynamic>>> _readArchivedRemote() async {
-    return _listCollection(await _archiveCollectionName());
+    return _listCollection('archive');
   }
 
   static String _projectDocId(String key) {
@@ -309,7 +361,6 @@ class SyncService {
   }
 
   static Future<void> upsertProjects(List<Map<String, dynamic>> projects) async {
-    final collection = await _projectsCollectionName();
     for (final raw in projects) {
       final key = (raw['projectKey']?.toString().trim().isNotEmpty == true)
           ? raw['projectKey'].toString().trim()
@@ -320,7 +371,7 @@ class SyncService {
           ? raw['id'].toString().trim()
           : _projectDocId(key);
 
-      await _writeDocument(collection, id, {
+      await _writeDocument('projects', id, {
         'id': id,
         'name': raw['name']?.toString() ?? key,
         'projectKey': key,
@@ -334,7 +385,7 @@ class SyncService {
   }
 
   static Future<List<Map<String, dynamic>>> readRemoteProjects() async {
-    final docs = await _listCollection(await _projectsCollectionName());
+    final docs = await _listCollection('projects');
     return docs.map((data) {
       final key = data['projectKey']?.toString().trim().isNotEmpty == true
           ? data['projectKey'].toString().trim()
@@ -357,9 +408,8 @@ class SyncService {
       final remote = await _readRemote();
       final remoteById = {for (final t in remote) t['id'] as String: t};
 
-      int pushed = 0;
+      var pushed = 0;
       final conflicts = <SyncConflict>[];
-      final collection = await _collectionName();
 
       for (final raw in localTasks) {
         final task = _normalizeTask(raw);
@@ -375,7 +425,7 @@ class SyncService {
           continue;
         }
 
-        await _writeDocument(collection, id, {
+        await _writeDocument('tasks', id, {
           ...task,
           'isArchived': false,
           'updatedAt': localTs > 0 ? localTs : DateTime.now().millisecondsSinceEpoch,
@@ -386,8 +436,6 @@ class SyncService {
       final latest = await _readRemote();
       final archived = await _readArchivedRemote();
 
-      // Resolve final state per id across active + archive collections.
-      // If timestamps tie, archive wins to avoid resurrecting deleted tasks.
       final byId = <String, Map<String, dynamic>>{};
       for (final t in latest) {
         final id = (t['id'] as String?) ?? '';
@@ -435,8 +483,6 @@ class SyncService {
     return sync([task]);
   }
 
-  /// Force-write one local task to active collection, bypassing conflict checks.
-  /// Used by "Keep mine" conflict resolution.
   static Future<String?> forcePushOne(Map<String, dynamic> task) async {
     try {
       final normalized = _normalizeTask(task);
@@ -446,14 +492,13 @@ class SyncService {
       final ts = _asInt(normalized['updatedAt']);
       final winningTs = ts > 0 ? ts : DateTime.now().millisecondsSinceEpoch;
 
-      await _writeDocument(await _collectionName(), taskId, {
+      await _writeDocument('tasks', taskId, {
         ...normalized,
         'isArchived': false,
         'updatedAt': winningTs,
       });
 
-      // Active wins: clear any stale archived twin for the same id.
-      await _deleteDocument(await _archiveCollectionName(), taskId);
+      await _deleteDocument('archive', taskId);
       return null;
     } catch (ex) {
       return ex.toString();
@@ -467,16 +512,14 @@ class SyncService {
       if (taskId.isEmpty) return 'Cannot archive task without id';
 
       final nowTs = DateTime.now().millisecondsSinceEpoch;
-      await _writeDocument(await _archiveCollectionName(), taskId, {
+      await _writeDocument('archive', taskId, {
         ...normalized,
         'isArchived': true,
         'archivedAt': nowTs,
-        // Archive action must always be newer than prior active copies.
         'updatedAt': nowTs,
       });
 
-      // Remove active copy so archive state is represented in one place.
-      await _deleteDocument(await _collectionName(), taskId);
+      await _deleteDocument('tasks', taskId);
       return null;
     } catch (ex) {
       return ex.toString();
@@ -490,14 +533,13 @@ class SyncService {
       if (taskId.isEmpty) return 'Cannot unarchive task without id';
 
       final nowTs = DateTime.now().millisecondsSinceEpoch;
-      await _writeDocument(await _collectionName(), taskId, {
+      await _writeDocument('tasks', taskId, {
         ...normalized,
         'isArchived': false,
-        // Unarchive action should also win over stale archived copies.
         'updatedAt': nowTs,
       });
 
-      await _deleteDocument(await _archiveCollectionName(), taskId);
+      await _deleteDocument('archive', taskId);
       return null;
     } catch (ex) {
       return ex.toString();
@@ -515,10 +557,14 @@ class SyncService {
   }
 
   static Future<({String email, String baseUrl})> savedCredentials() async {
-    return (email: '', baseUrl: await _collectionName());
+    final prefs = await SharedPreferences.getInstance();
+    return (
+      email: prefs.getString(_prefKeyEmail) ?? '',
+      baseUrl: prefs.getString(_prefKeyBaseUrl) ?? '',
+    );
   }
 
-  static Future<bool> get hasToken async => true;
+  static Future<bool> get hasToken async => FirebaseAuth.instance.currentUser != null;
 
   static Future<String?> register({
     required String baseUrl,
@@ -527,7 +573,29 @@ class SyncService {
     required String firstName,
     required String lastName,
   }) async {
-    return 'Registration is not required for Firebase sync.';
+    try {
+      final normalizedEmail = email.trim();
+      if (normalizedEmail.isEmpty || password.isEmpty) {
+        return 'Email and password are required.';
+      }
+      final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: normalizedEmail,
+        password: password,
+      );
+      final displayName = [firstName.trim(), lastName.trim()]
+          .where((p) => p.isNotEmpty)
+          .join(' ')
+          .trim();
+      if (displayName.isNotEmpty) {
+        await cred.user?.updateDisplayName(displayName);
+      }
+      await configure(baseUrl: baseUrl, email: normalizedEmail, password: password);
+      return null;
+    } on FirebaseAuthException catch (ex) {
+      return ex.message ?? ex.code;
+    } catch (ex) {
+      return ex.toString();
+    }
   }
 
   static Future<String?> verifyOtp({
@@ -535,6 +603,6 @@ class SyncService {
     required String email,
     required String otp,
   }) async {
-    return 'OTP verification is not required for Firebase sync.';
+    return null;
   }
 }

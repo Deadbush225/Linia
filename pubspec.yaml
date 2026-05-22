@@ -38,6 +38,7 @@ dependencies:
   permission_handler: ^11.3.1
   http: ^1.6.0
   firebase_core: ^3.15.2
+  firebase_auth: ^5.6.1
   cloud_firestore: ^5.6.12
   flutter_markdown: ^0.7.7+1
   package_info_plus: ^8.1.1

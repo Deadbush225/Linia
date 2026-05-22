@@ -20,15 +20,14 @@ import 'package:window_manager/window_manager.dart';
 
 import 'firebase_options.dart';
 import 'sync_service.dart';
+import 'widgets/auth_gate.dart';
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  if (!Platform.isLinux) {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-  }
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   if (Platform.isAndroid || Platform.isIOS) {
     HomeWidget.setAppGroupId('com.deadbush225.linia');
   }
@@ -80,7 +79,7 @@ class GanttApp extends StatelessWidget {
           elevation: 0,
         ),
       ),
-      home: const HomePage(),
+      home: const AuthGate(child: HomePage()),
     );
   }
 }
@@ -3901,8 +3900,9 @@ class _SyncSetupSheetState extends State<_SyncSetupSheet> {
     );
     if (!mounted) return;
     if (err != null) { setState(() { _busy = false; _error = err; }); return; }
-    // Success → move to OTP step
-    setState(() { _busy = false; _waitingForOtp = true; });
+    if (!mounted) return;
+    setState(() { _busy = false; _waitingForOtp = false; });
+    widget.onSaved();
   }
 
   Future<void> _doVerifyOtp() async {
