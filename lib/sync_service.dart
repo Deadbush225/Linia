@@ -49,6 +49,27 @@ class _SyncUser {
   });
 }
 
+class AuthConfig {
+  static String get clientId {
+    if (Platform.isLinux) {
+      return const String.fromEnvironment('LINUX_CLIENT_ID');
+    } else if (Platform.isWindows) {
+      return const String.fromEnvironment('WINDOWS_CLIENT_ID');
+    }
+    // Return empty for Android, as it relies on google-services.json
+    return ''; 
+  }
+
+  static String get clientSecret {
+    if (Platform.isLinux) {
+      return const String.fromEnvironment('LINUX_CLIENT_SECRET');
+    } else if (Platform.isWindows) {
+      return const String.fromEnvironment('WINDOWS_CLIENT_SECRET');
+    }
+    return '';
+  }
+}
+
 class SyncService {
   static const _prefKeyBaseUrl = 'sync_base_url';
   static const _prefKeyEmail = 'sync_email';
@@ -58,14 +79,8 @@ class SyncService {
   static const _prefKeyRefreshToken = 'sync_firebase_refresh_token';
   static const _prefKeyTokenExpiryMs = 'sync_firebase_token_expiry_ms';
 
-  static const _desktopGoogleClientId = String.fromEnvironment(
-    'LINIA_GOOGLE_CLIENT_ID',
-    defaultValue: '',
-  );
-  static const _desktopGoogleClientSecret = String.fromEnvironment(
-    'LINIA_GOOGLE_CLIENT_SECRET',
-    defaultValue: '',
-  );
+  static const _googleClientId = AuthConfig.clientId;
+  static const _googleClientSecret = AuthConfig.clientSecret;
 
   static String get _apiKey => DefaultFirebaseOptions.currentPlatform.apiKey;
   static String get _projectId => DefaultFirebaseOptions.currentPlatform.projectId;
@@ -116,8 +131,8 @@ class SyncService {
 
   static bool get _desktopMissingGoogleClientConfig {
     if (!isDesktop) return false;
-    return _desktopGoogleClientId.trim().isEmpty ||
-        _desktopGoogleClientSecret.trim().isEmpty;
+    return _googleClientId.trim().isEmpty ||
+        _googleClientSecret.trim().isEmpty;
   }
 
   static GoogleSignIn _google() {
@@ -127,8 +142,8 @@ class SyncService {
     final created = isDesktop
         ? GoogleSignIn(
             params: GoogleSignInParams(
-              clientId: _desktopGoogleClientId.trim(),
-              clientSecret: _desktopGoogleClientSecret.trim(),
+              clientId: _googleClientId.trim(),
+              clientSecret: _googleClientSecret.trim(),
             ),
           )
         : GoogleSignIn();
