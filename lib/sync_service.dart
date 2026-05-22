@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:firedart/firedart.dart';
 import 'package:google_sign_in_all_platforms/google_sign_in_all_platforms.dart';
@@ -79,8 +80,8 @@ class SyncService {
   static const _prefKeyRefreshToken = 'sync_firebase_refresh_token';
   static const _prefKeyTokenExpiryMs = 'sync_firebase_token_expiry_ms';
 
-  static const _googleClientId = AuthConfig.clientId;
-  static const _googleClientSecret = AuthConfig.clientSecret;
+  static final String _googleClientId = AuthConfig.clientId;
+  static final String _googleClientSecret = AuthConfig.clientSecret;
 
   static String get _apiKey => DefaultFirebaseOptions.currentPlatform.apiKey;
   static String get _projectId => DefaultFirebaseOptions.currentPlatform.projectId;

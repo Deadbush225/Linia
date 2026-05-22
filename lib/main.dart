@@ -25,9 +25,9 @@ import 'widgets/auth_gate.dart';
 // ─── Entry point ─────────────────────────────────────────────────────────────
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  // await Firebase.initializeApp(
+  //   options: DefaultFirebaseOptions.currentPlatform,
+  // );
   if (Platform.isAndroid || Platform.isIOS) {
     HomeWidget.setAppGroupId('com.deadbush225.linia');
   }
