@@ -416,7 +416,10 @@ class SyncService {
     }).toList();
   }
 
-  static Future<SyncResult> sync(List<Map<String, dynamic>> localTasks) async {
+  static Future<SyncResult> sync(
+    List<Map<String, dynamic>> localTasks, {
+    Map<String, Map<String, dynamic>>? collapsedActions,
+  }) async {
     try {
       final remote = await _readRemote();
       final remoteById = {for (final t in remote) t['id'] as String: t};
@@ -444,6 +447,37 @@ class SyncService {
           'updatedAt': localTs > 0 ? localTs : DateTime.now().millisecondsSinceEpoch,
         });
         pushed += 1;
+      }
+
+      // Apply collapsed archive/unarchive actions to the cloud
+      final actions = collapsedActions ?? {};
+      final nowTs = DateTime.now().millisecondsSinceEpoch;
+      
+      for (final taskId in actions.keys) {
+        final action = actions[taskId];
+        final actionType = action?['action'] as String?;
+        final taskData = action?['taskData'] as Map<String, dynamic>? ?? {};
+        
+        if (actionType == 'archive') {
+          // Move task from tasks collection to archive collection
+          final normalized = _normalizeTask(taskData);
+          await _writeDocument('archive', taskId, {
+            ...normalized,
+            'isArchived': true,
+            'archivedAt': nowTs,
+            'updatedAt': nowTs,
+          });
+          await _deleteDocument('tasks', taskId);
+        } else if (actionType == 'unarchive') {
+          // Move task from archive collection to tasks collection
+          final normalized = _normalizeTask(taskData);
+          await _writeDocument('tasks', taskId, {
+            ...normalized,
+            'isArchived': false,
+            'updatedAt': nowTs,
+          });
+          await _deleteDocument('archive', taskId);
+        }
       }
 
       final latest = await _readRemote();

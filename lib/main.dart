@@ -565,6 +565,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   static const _prefAotAlign = 'linux_aot_align';
   static const _prefAotOffsetX = 'linux_aot_offset_x';
   static const _prefAotOffsetY = 'linux_aot_offset_y';
+  static const _prefActionLog = 'sync_action_log';
+
+  // Action types for local operations before sync
+  static const _actionArchive = 'archive';
+  static const _actionUnarchive = 'unarchive';
 
   List<String> _projectRoots = [];
   int _activeRootIndex = 0;
@@ -671,6 +676,56 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       if (!isNested) normalized.add(candidate);
     }
     return normalized;
+  }
+
+  // ── Action logging ──────────────────────────────────────────────────────────
+
+  /// Log an action (archive/unarchive) with the task data needed for sync.
+  /// Actions are stored locally and then collapsed before sync.
+  /// Format: {taskId: {action: 'archive'|'unarchive', taskData: {...}, timestamp: ms}}
+  Future<void> _logAction(String taskId, String actionType, Task taskData) async {
+    final prefs = await SharedPreferences.getInstance();
+    final rawLog = prefs.getString(_prefActionLog) ?? '{}';
+    final log = jsonDecode(rawLog) as Map<String, dynamic>;
+
+    if (!log.containsKey(taskId)) {
+      log[taskId] = <String, dynamic>{};
+    }
+    final taskActions = log[taskId] as Map<String, dynamic>;
+    taskActions['action'] = actionType;
+    taskActions['taskData'] = taskData.toJson();
+    taskActions['timestamp'] = DateTime.now().millisecondsSinceEpoch;
+
+    await prefs.setString(_prefActionLog, jsonEncode(log));
+  }
+
+  /// Get all logged actions, with opposing actions already collapsed.
+  /// Returns a map of taskId -> {action: 'archive'|'unarchive', taskData: {...}, timestamp: ms}
+  /// If a task was archived then unarchived (or vice versa), it won't appear.
+  Future<Map<String, Map<String, dynamic>>> _getCollapsedActions() async {
+    final prefs = await SharedPreferences.getInstance();
+    final rawLog = prefs.getString(_prefActionLog) ?? '{}';
+    final log = jsonDecode(rawLog) as Map<String, dynamic>;
+
+    final collapsed = <String, Map<String, dynamic>>{};
+    for (final taskId in log.keys) {
+      final taskActions = log[taskId] as Map<String, dynamic>;
+      final action = taskActions['action'] as String?;
+      if (action == null) continue;
+
+      collapsed[taskId] = {
+        'action': action,
+        'taskData': taskActions['taskData'] as Map<String, dynamic>? ?? {},
+        'timestamp': taskActions['timestamp'] as int? ?? 0,
+      };
+    }
+    return collapsed;
+  }
+
+  /// Clear the action log after successful sync.
+  Future<void> _clearActionLog() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefActionLog, '{}');
   }
 
   // Sync state
@@ -1419,8 +1474,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
     await _syncProjectRegistry();
     final payload = await _buildSyncPayloadForAllRoots();
+    
+    // Get collapsed actions (archive/unarchive) to include in sync
+    final collapsedActions = await _getCollapsedActions();
 
-    final result = await SyncService.sync(payload);
+    final result = await SyncService.sync(payload, collapsedActions: collapsedActions);
 
     if (!mounted) return;
     if (!result.ok) {
@@ -1429,6 +1487,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       }
       return;
     }
+
+    // Clear action log after successful sync
+    await _clearActionLog();
 
     // Apply pulled tasks (server is authoritative for these)
     await _pullRemoteProjectRegistry();
@@ -1860,36 +1921,22 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   Future<void> _archiveTask(Task t) async {
     if (_projectRoot == null) return;
     final projectPath = _currentProjectPathForRoot(_projectRoot!);
-    final projectKey = _activeProjectKeyByRoot[_projectRoot!] ?? _rootName(projectPath);
-    final rawFrontmatter = await File(t.filePath).readAsString();
-    final now = DateTime.now().millisecondsSinceEpoch;
+    
+    // Archive locally
     await _archiveFile(t.filePath, projectPath);
     await _refresh();
-    if (await SyncService.isConfigured) {
-      final err = await SyncService.archiveRemote({
-        ...t.toJson(),
-        'projectRoot': _projectRoot,
-        'projectKey': projectKey,
-        'rawFrontmatter': rawFrontmatter,
-        'updatedAt': now,
-      });
-      if (err != null && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Archived locally, but cloud archive failed: $err')),
-        );
-      }
-    }
+    
+    // Log the action for cloud sync (actions will be applied during next sync)
+    await _logAction(t.id, _actionArchive, t);
   }
 
   Future<void> _unarchiveTask(Task t) async {
     if (_projectRoot == null) return;
     final projectPath = _currentProjectPathForRoot(_projectRoot!);
-    final projectKey = _activeProjectKeyByRoot[_projectRoot!] ?? _rootName(projectPath);
 
     final file = File(t.filePath);
     if (!await file.exists()) return;
 
-    final rawFrontmatter = await file.readAsString();
     final fileName = t.filePath.split('/').last;
     var dest = '$projectPath/$fileName';
     if (await File(dest).exists()) {
@@ -1898,16 +1945,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
     await file.rename(dest);
     await _refresh();
-
-    if (await SyncService.isConfigured) {
-      await SyncService.unarchiveRemote({
-        ...t.toJson(),
-        'projectRoot': _projectRoot,
-        'projectKey': projectKey,
-        'rawFrontmatter': rawFrontmatter,
-        'updatedAt': DateTime.now().millisecondsSinceEpoch,
-      });
-    }
+    
+    // Log the action for cloud sync (actions will be applied during next sync)
+    await _logAction(t.id, _actionUnarchive, t);
   }
 
   void _openTaskSheet(Task t) {

@@ -1,29 +1,54 @@
 {
-	"project_info": {
-		"project_number": "106610450876",
-		"project_id": "todo-76f15",
-		"storage_bucket": "todo-76f15.firebasestorage.app"
-	},
-	"client": [
-		{
-			"client_info": {
-				"mobilesdk_app_id": "1:106610450876:android:5425ad7d15e77583dd4bb9",
-				"android_client_info": {
-					"package_name": "com.deadbush225.linia"
-				}
-			},
-			"oauth_client": [],
-			"api_key": [
-				{
-					"current_key": "AIzaSyBEKM_L00sgPsdltkOmQVX74Jj1QPslfFQ"
-				}
-			],
-			"services": {
-				"appinvite_service": {
-					"other_platform_oauth_client": []
-				}
-			}
-		}
-	],
-	"configuration_version": "1"
+  "project_info": {
+    "project_number": "106610450876",
+    "project_id": "todo-76f15",
+    "storage_bucket": "todo-76f15.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:106610450876:android:5425ad7d15e77583dd4bb9",
+        "android_client_info": {
+          "package_name": "com.deadbush225.linia"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "106610450876-857d4gq2qd9s33f7dmmlbhcrj8cn1s17.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.deadbush225.linia",
+            "certificate_hash": "9d261a4c7f79c5af75d136257503172ee46f89be"
+          }
+        },
+        {
+          "client_id": "106610450876-3qlpdkrlgcn7v7d998b5trakccmt6ri5.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBEKM_L00sgPsdltkOmQVX74Jj1QPslfFQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "106610450876-3qlpdkrlgcn7v7d998b5trakccmt6ri5.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "106610450876-9oiai2me0rmkcgkk3td0pldfb9ntuju0.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.ganttViewer"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
 }
